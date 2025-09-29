@@ -1,0 +1,112 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rtspapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    command: ["-config", "/mediamtx.yml"]
+    ports:
+      - "8554:8554"   # RTSP
+      - "8889:8889"   # WebRTC HTTP (WHEP/WHIP)
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8889"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      BACKEND_PORT: ${BACKEND_PORT:-8080}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/internal/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ../worker
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      WORKER_PORT: ${WORKER_PORT:-8082}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      MEDIAMTX_RTSP_URL: ${MEDIAMTX_RTSP_URL:-rtsp://mediamtx:8554}
+      MEDIAMTX_WHEP_URL: ${MEDIAMTX_WHEP_URL:-http://mediamtx:8889/whep}
+      BACKEND_URL: http://backend:8080
+      SNAPSHOT_BASE_URL: ${SNAPSHOT_BASE_URL:-http://backend:8080/snapshots}
+    depends_on:
+      mediamtx:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    volumes:
+      - snapshots:/app/snapshots
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
+      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8080/ws}
+      VITE_MEDIAMTX_WHEP: ${VITE_MEDIAMTX_WHEP:-http://localhost:8889/whep}
+    depends_on:
+      backend:
+        condition: service_healthy
+      mediamtx:
+        condition: service_healthy
+    ports:
+      - "8081:80"
+
+volumes:
+  pgdata:
+  snapshots:
+

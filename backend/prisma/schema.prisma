@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  cameras      Camera[]
+  createdAt    DateTime @default(now())
+}
+
+model Camera {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  name             String
+  rtspUrl          String
+  location         String
+  enabled          Boolean  @default(true)
+  detectionEnabled Boolean  @default(true)
+  fpsTarget        Int      @default(8)
+  status           String   @default("stopped")
+  alerts           Alert[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Alert {
+  id          String   @id @default(uuid())
+  cameraId    String
+  camera      Camera   @relation(fields: [cameraId], references: [id])
+  timestamp   DateTime
+  bboxJson    String
+  snapshotUrl String
+  confidence  Float
+  metadataJson String
+  createdAt   DateTime @default(now())
+}
+

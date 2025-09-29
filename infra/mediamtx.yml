@@ -1,0 +1,14 @@
+# Minimal MediaMTX config enabling RTSP and WebRTC (WHEP/WHIP)
+rtspAddress: :8554
+webrtc:
+  enable: yes
+  # no encryption for local demo; for production use TLS and proper ICE servers
+  encryption: no
+  # default HTTP address for WHEP/WHIP
+  address: :8889
+
+# Allow any path, no auth for local demo
+paths:
+  all:
+    source: publisher
+
